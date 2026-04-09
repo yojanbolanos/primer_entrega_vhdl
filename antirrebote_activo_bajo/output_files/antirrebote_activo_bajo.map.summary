@@ -1,0 +1,14 @@
+Analysis & Synthesis Status : Successful - Wed Mar 25 22:47:55 2026
+Quartus II 64-Bit Version : 13.1.0 Build 162 10/23/2013 SJ Web Edition
+Revision Name : antirrebote_activo_bajo
+Top-level Entity Name : antirrebote_activo_bajo
+Family : Cyclone III
+Total logic elements : 25
+    Total combinational functions : 24
+    Dedicated logic registers : 19
+Total registers : 19
+Total pins : 4
+Total virtual pins : 0
+Total memory bits : 0
+Embedded Multiplier 9-bit elements : 0
+Total PLLs : 0

@@ -1,0 +1,35 @@
+library ieee;                               
+use ieee.std_logic_1164.all;                 
+
+entity decodificador_7seg_alfanumerico is    
+    port(
+        codigo : in  std_logic_vector(3 downto 0); -- Codigo de caracter
+        seg    : out std_logic_vector(6 downto 0)  -- Salida a display
+    );
+end decodificador_7seg_alfanumerico;
+
+architecture arquitectura_decodificador_7seg_alfanumerico of decodificador_7seg_alfanumerico is
+begin
+
+    with codigo select
+    -- Orden segmentos: abcdefg
+    -- Display activo en bajo
+    seg <=
+        "1111111" when "0000", -- blanco / apagado
+        "1111001" when "0001", -- I
+        "1000010" when "0010", -- d aproximada
+        "1110001" when "0011", -- L
+        "0110000" when "0100", -- E
+        "0000001" when "0101", -- O
+        "0011000" when "0110", -- P
+        "0001000" when "0111", -- A
+        "1111010" when "1000", -- r aproximada
+        "1100000" when "1001", -- b aproximada
+        "1000111" when "1010", -- t aproximada
+        "1001000" when "1011", -- H aproximada
+        "0101011" when "1100", -- n aproximada
+        "1111110" when "1101", -- guion
+        "0001001" when "1110", -- ALr / y aproximada libre
+        "1111111" when others; -- apagado
+
+end arquitectura_decodificador_7seg_alfanumerico;

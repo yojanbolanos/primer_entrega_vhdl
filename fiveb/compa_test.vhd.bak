@@ -1,0 +1,17 @@
+library ieee; 
+ use ieee.std_logic_1164.all;
+ 
+ entity compa_test is
+
+	port
+	(
+		-- Input ports
+		a,b	: in  std_logic_vector(3 downto 0);
+		
+		
+		-- Output ports
+		i,m,n	: out std_logic
+	);
+end compa_test;
+
+

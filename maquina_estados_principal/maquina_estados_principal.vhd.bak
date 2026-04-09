@@ -1,0 +1,161 @@
+library ieee;                                
+use ieee.std_logic_1164.all;                
+use ieee.numeric_std.all;                    
+
+entity maquina_estados_principal is         
+    port(
+        clk                   : in  std_logic;              -- Reloj principal
+        rst                   : in  std_logic;              -- Reset
+
+        clave_completa        : in  std_logic;              -- Vale 1 cuando ya hay 4 digitos
+        clave_correcta        : in  std_logic;              -- Vale 1 si la clave coincide
+        intentos_actuales     : in  integer range 0 to 3;   -- Numero actual de errores
+        intrusion             : in  std_logic;              -- Evento de intrusion
+        tiempo_apertura_fin   : in  std_logic;              -- Avisa fin de apertura
+        tiempo_bloqueo_fin    : in  std_logic;              -- Avisa fin de bloqueo
+
+        estado_out            : out std_logic_vector(2 downto 0); -- Estado actual
+        limpiar_clave         : out std_logic;              -- Borra clave cargada
+        incrementar_intento   : out std_logic;              -- Suma intento fallido
+        limpiar_intentos      : out std_logic;              -- Borra contador de intentos
+        iniciar_apertura      : out std_logic;              -- Arranca temporizador de apertura
+        iniciar_bloqueo       : out std_logic;              -- Arranca temporizador de bloqueo
+        activar_alarma        : out std_logic;              -- Activa alarma
+        desactivar_alarma     : out std_logic;              -- Apaga alarma
+        abrir_cerradura       : out std_logic;              -- Mantiene cerradura abierta
+        activar_pestillo      : out std_logic               -- Control de pestillo
+    );
+end maquina_estados_principal;
+
+architecture arquitectura_maquina_estados_principal of maquina_estados_principal is
+
+    type tipo_estado is (IDLE, INGRESO, OPEN, ERROR_CLAVE, ALARMA, BLOQUEO); -- Estados internos
+
+    signal estado_actual   : tipo_estado := IDLE; -- Guarda estado presente
+    signal estado_siguiente: tipo_estado := IDLE; -- Guarda estado futuro
+
+begin
+
+    process(clk, rst)                             -- Registro de estado
+    begin
+        if rst = '1' then                         -- Si reset activo
+            estado_actual <= IDLE;                -- Va al estado inicial
+        elsif rising_edge(clk) then               -- En cada flanco de subida
+            estado_actual <= estado_siguiente;    -- Actualiza el estado
+        end if;
+    end process;
+
+    process(estado_actual, clave_completa, clave_correcta, intentos_actuales, intrusion,
+            tiempo_apertura_fin, tiempo_bloqueo_fin)
+    begin
+        -- Valores por defecto de salidas
+        limpiar_clave       <= '0';
+        incrementar_intento <= '0';
+        limpiar_intentos    <= '0';
+        iniciar_apertura    <= '0';
+        iniciar_bloqueo     <= '0';
+        activar_alarma      <= '0';
+        desactivar_alarma   <= '0';
+        abrir_cerradura     <= '0';
+        activar_pestillo    <= '0';
+
+        -- Valor por defecto de proximo estado
+        estado_siguiente    <= estado_actual;
+
+        case estado_actual is
+
+            when IDLE =>
+                -- Estado inicial del sistema
+                desactivar_alarma <= '1';         -- Asegura que la alarma quede apagada
+                limpiar_clave     <= '0';         -- No borra mientras espera
+                limpiar_intentos  <= '0';         -- No borra errores aun
+
+                if intrusion = '1' then           -- Si hay intrusion
+                    estado_siguiente <= ALARMA;   -- Va directo a alarma
+                else
+                    estado_siguiente <= INGRESO;  -- Si no, queda listo para ingresar clave
+                end if;
+
+            when INGRESO =>
+                -- Aqui el usuario va digitando la clave
+                if intrusion = '1' then           -- Si detecta intrusion
+                    estado_siguiente <= ALARMA;   -- Activa alarma
+                elsif clave_completa = '1' then   -- Si ya se cargaron 4 digitos
+                    if clave_correcta = '1' then  -- Si la clave es correcta
+                        iniciar_apertura <= '1';  -- Arranca tiempo de apertura
+                        limpiar_intentos <= '1';  -- Reinicia errores acumulados
+                        estado_siguiente <= OPEN; -- Va a estado de apertura
+                    else
+                        incrementar_intento <= '1'; -- Suma error
+
+                        if intentos_actuales = 2 then -- Si este seria el tercer error
+                            iniciar_bloqueo <= '1';   -- Arranca bloqueo
+                            activar_alarma  <= '1';   -- Enciende alarma
+                            estado_siguiente <= BLOQUEO; -- Va a bloqueo
+                        else
+                            estado_siguiente <= ERROR_CLAVE; -- Solo muestra error
+                        end if;
+                    end if;
+                end if;
+
+            when OPEN =>
+                -- Mientras este abierto, mantiene la salida de cerradura activa
+                abrir_cerradura  <= '1';          -- Abre cerradura
+                activar_pestillo <= '1';          -- Activa pestillo tambien si quieres
+
+                if intrusion = '1' then           -- Si ocurre intrusion aun abierto
+                    activar_alarma  <= '1';       -- Enciende alarma
+                    estado_siguiente <= ALARMA;   -- Va a alarma
+                elsif tiempo_apertura_fin = '1' then -- Si termino el tiempo
+                    limpiar_clave     <= '1';     -- Borra clave mostrada
+                    desactivar_alarma <= '1';     -- Asegura alarma apagada
+                    estado_siguiente  <= IDLE;    -- Regresa a inicio
+                end if;
+
+            when ERROR_CLAVE =>
+                -- Muestra error solo un instante logico y vuelve a inicio
+                limpiar_clave    <= '1';          -- Borra clave mal ingresada
+                estado_siguiente <= IDLE;         -- Regresa a inicio
+
+            when ALARMA =>
+                -- Estado de alarma por intrusion
+                activar_alarma <= '1';            -- Mantiene alarma encendida
+
+                if tiempo_bloqueo_fin = '1' then  -- Si termina tiempo de alarma/bloqueo
+                    desactivar_alarma <= '1';     -- Apaga alarma
+                    limpiar_clave     <= '1';     -- Borra clave
+                    estado_siguiente  <= IDLE;    -- Vuelve al inicio
+                else
+                    iniciar_bloqueo <= '1';       -- Usa temporizador de bloqueo como castigo
+                    estado_siguiente <= BLOQUEO;  -- Pasa a bloqueo
+                end if;
+
+            when BLOQUEO =>
+                -- Estado donde no se permite seguir intentando
+                activar_alarma <= '1';            -- Mantiene alarma activa
+
+                if tiempo_bloqueo_fin = '1' then  -- Si termina el tiempo de castigo
+                    desactivar_alarma <= '1';     -- Apaga alarma
+                    limpiar_clave     <= '1';     -- Borra clave
+                    limpiar_intentos  <= '1';     -- Reinicia contador de errores
+                    estado_siguiente  <= IDLE;    -- Regresa a inicio
+                end if;
+
+            when others =>
+                estado_siguiente <= IDLE;         -- Seguridad por defecto
+
+        end case;
+    end process;
+
+    -- Codificacion del estado actual para usarlo en otros modulos
+    with estado_actual select
+        estado_out <=
+            "000" when IDLE,
+            "001" when INGRESO,
+            "010" when OPEN,
+            "011" when ERROR_CLAVE,
+            "100" when ALARMA,
+            "101" when BLOQUEO,
+            "000" when others;
+
+end arquitectura_maquina_estados_principal;

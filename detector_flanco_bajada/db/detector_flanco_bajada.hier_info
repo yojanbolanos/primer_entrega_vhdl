@@ -1,0 +1,10 @@
+|detector_flanco_bajada
+clk => pulso~reg0.CLK
+clk => sig_anterior.CLK
+rst => pulso~reg0.ACLR
+rst => sig_anterior.PRESET
+sig_in => sig_anterior.DATAIN
+sig_in => process_0.IN1
+pulso <= pulso~reg0.DB_MAX_OUTPUT_PORT_TYPE
+
+

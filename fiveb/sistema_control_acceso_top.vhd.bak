@@ -1,0 +1,627 @@
+library ieee;                                  -- Libreria base
+use ieee.std_logic_1164.all;                   -- Tipos logicos
+use ieee.numeric_std.all;                      -- Operaciones numericas
+
+entity sistema_control_acceso_top is           -- Entidad principal del sistema
+    port(
+        CLOCK_50       : in  std_logic;        -- Reloj de 50 MHz
+        RESET          : in  std_logic;        -- Reset general
+
+        SW             : in  std_logic_vector(3 downto 0); -- Switches para ingresar digito
+        KEY0           : in  std_logic;        -- Boton de carga activo en bajo
+
+        SENSOR_PUERTA  : in  std_logic;        -- Sensor de puerta
+        INTRUSION_IN   : in  std_logic;        -- Evento externo de intrusion
+
+        HEX0           : out std_logic_vector(6 downto 0); -- Display HEX0
+        HEX1           : out std_logic_vector(6 downto 0); -- Display HEX1
+        HEX2           : out std_logic_vector(6 downto 0); -- Display HEX2
+        HEX3           : out std_logic_vector(6 downto 0); -- Display HEX3
+
+        LED_OK         : out std_logic;        -- Led de acceso correcto
+        LED_ALARMA     : out std_logic;        -- Led de alarma
+        LED_CERRADURA  : out std_logic;        -- Led de cerradura activa
+        LED_BLOQUEO    : out std_logic;        -- Led de bloqueo
+        LED_PUERTA     : out std_logic         -- Led de puerta abierta
+    );
+end sistema_control_acceso_top;
+
+architecture arquitectura_sistema_control_acceso_top of sistema_control_acceso_top is
+
+    -- =====================================================
+    -- Declaracion de componentes usados
+    -- =====================================================
+    component antirrebote_activo_bajo
+        generic(
+            COUNT_MAX : integer := 50000
+        );
+        port(
+            clk    : in  std_logic;
+            rst    : in  std_logic;
+            btn_in : in  std_logic;
+            btn_db : out std_logic
+        );
+    end component;
+
+    component detector_flanco_bajada
+        port(
+            clk    : in  std_logic;
+            rst    : in  std_logic;
+            sig_in : in  std_logic;
+            pulso  : out std_logic
+        );
+    end component;
+
+    component registro_corrimiento_4_digitos
+        port(
+            clk             : in  std_logic;
+            rst             : in  std_logic;
+            limpiar         : in  std_logic;
+            cargar_digito   : in  std_logic;
+            digito_in       : in  std_logic_vector(3 downto 0);
+            hex0_out        : out std_logic_vector(3 downto 0);
+            hex1_out        : out std_logic_vector(3 downto 0);
+            hex2_out        : out std_logic_vector(3 downto 0);
+            hex3_out        : out std_logic_vector(3 downto 0);
+            clave_out       : out std_logic_vector(15 downto 0);
+            cuenta_digitos  : out integer range 0 to 4;
+            completo        : out std_logic
+        );
+    end component;
+
+    component comparador_clave_4_digitos
+        port(
+            clave_ingresada : in  std_logic_vector(15 downto 0);
+            clave_guardada  : in  std_logic_vector(15 downto 0);
+            coincide        : out std_logic
+        );
+    end component;
+
+    component contador_intentos_fallidos
+        port(
+            clk              : in  std_logic;
+            rst              : in  std_logic;
+            limpiar          : in  std_logic;
+            incrementar      : in  std_logic;
+            cuenta           : out integer range 0 to 3;
+            maximo_alcanzado : out std_logic
+        );
+    end component;
+
+    component generador_tick_1s
+        generic(
+            CLK_FREQ : integer := 50000000
+        );
+        port(
+            clk     : in  std_logic;
+            rst     : in  std_logic;
+            tick_1s : out std_logic
+        );
+    end component;
+
+    component temporizador_descendente
+        generic(
+            MAX_VALUE : integer := 59
+        );
+        port(
+            clk        : in  std_logic;
+            rst        : in  std_logic;
+            iniciar    : in  std_logic;
+            tick_1s    : in  std_logic;
+            preset     : in  integer range 0 to MAX_VALUE;
+            corriendo  : out std_logic;
+            terminado  : out std_logic;
+            valor_out  : out integer range 0 to MAX_VALUE
+        );
+    end component;
+
+    component controlador_alarma
+        port(
+            clk        : in  std_logic;
+            rst        : in  std_logic;
+            activar    : in  std_logic;
+            desactivar : in  std_logic;
+            alarma_out : out std_logic
+        );
+    end component;
+
+    component controlador_cerradura
+        port(
+            abrir            : in  std_logic;
+            cerrar           : in  std_logic;
+            activar_pestillo : in  std_logic;
+            cerradura_out    : out std_logic;
+            pestillo_out     : out std_logic
+        );
+    end component;
+
+    component monitor_puerta
+        port(
+            sensor_puerta  : in  std_logic;
+            puerta_abierta : out std_logic;
+            puerta_cerrada : out std_logic
+        );
+    end component;
+
+    component maquina_estados_principal
+        port(
+            clk                   : in  std_logic;
+            rst                   : in  std_logic;
+            clave_completa        : in  std_logic;
+            clave_correcta        : in  std_logic;
+            intentos_actuales     : in  integer range 0 to 3;
+            intrusion             : in  std_logic;
+            tiempo_apertura_fin   : in  std_logic;
+            tiempo_bloqueo_fin    : in  std_logic;
+            estado_out            : out std_logic_vector(2 downto 0);
+            limpiar_clave         : out std_logic;
+            incrementar_intento   : out std_logic;
+            limpiar_intentos      : out std_logic;
+            iniciar_apertura      : out std_logic;
+            iniciar_bloqueo       : out std_logic;
+            activar_alarma        : out std_logic;
+            desactivar_alarma     : out std_logic;
+            abrir_cerradura       : out std_logic;
+            activar_pestillo      : out std_logic
+        );
+    end component;
+
+component fiveb
+    port(
+        entrada : in  std_logic_vector(3 downto 0);
+        seg     : out std_logic_vector(6 downto 0)
+    );
+end component;
+    component decodificador_7seg_alfanumerico
+        port(
+            codigo : in  std_logic_vector(3 downto 0);
+            seg    : out std_logic_vector(6 downto 0)
+        );
+    end component;
+
+    -- =====================================================
+    -- Senales internas
+    -- =====================================================
+    signal boton_limpio        : std_logic;                     -- Boton filtrado
+    signal pulso_carga         : std_logic;                     -- Pulso para guardar digito
+
+    signal dig_hex0            : std_logic_vector(3 downto 0);  -- Digito en HEX0
+    signal dig_hex1            : std_logic_vector(3 downto 0);  -- Digito en HEX1
+    signal dig_hex2            : std_logic_vector(3 downto 0);  -- Digito en HEX2
+    signal dig_hex3            : std_logic_vector(3 downto 0);  -- Digito en HEX3
+
+    signal clave_ingresada     : std_logic_vector(15 downto 0); -- Clave completa del usuario
+    signal clave_completa      : std_logic;                     -- Ya se cargaron 4 digitos
+    signal cantidad_digitos    : integer range 0 to 4;          -- Cuantos van
+
+    signal clave_correcta      : std_logic;                     -- Resultado del comparador
+
+    signal intentos            : integer range 0 to 3;          -- Numero de errores acumulados
+    signal maximo_intentos     : std_logic;                     -- No es obligatorio usarlo, pero queda disponible
+
+    signal tick_1s             : std_logic;                     -- Pulso de 1 segundo
+
+    signal apertura_corriendo  : std_logic;                     -- Temporizador de apertura corriendo
+    signal apertura_fin        : std_logic;                     -- Fin temporizador apertura
+    signal apertura_valor      : integer range 0 to 59;         -- Valor actual apertura
+
+    signal bloqueo_corriendo   : std_logic;                     -- Temporizador de bloqueo corriendo
+    signal bloqueo_fin         : std_logic;                     -- Fin temporizador bloqueo
+    signal bloqueo_valor       : integer range 0 to 59;         -- Valor actual bloqueo
+
+    signal puerta_abierta      : std_logic;                     -- Señal monitor puerta
+    signal puerta_cerrada      : std_logic;                     -- Señal monitor puerta
+
+    signal estado_sistema      : std_logic_vector(2 downto 0);  -- Estado actual codificado
+
+    signal limpiar_clave_s     : std_logic;                     -- Control limpiar clave
+    signal incrementar_int_s   : std_logic;                     -- Control sumar intento
+    signal limpiar_intentos_s  : std_logic;                     -- Control limpiar errores
+    signal iniciar_apertura_s  : std_logic;                     -- Control iniciar apertura
+    signal iniciar_bloqueo_s   : std_logic;                     -- Control iniciar bloqueo
+    signal activar_alarma_s    : std_logic;                     -- Control activar alarma
+    signal desactivar_alarma_s : std_logic;                     -- Control apagar alarma
+    signal abrir_cerradura_s   : std_logic;                     -- Control abrir cerradura
+    signal activar_pestillo_s  : std_logic;                     -- Control pestillo
+
+    signal alarma_activa       : std_logic;                     -- Salida de alarma ya controlada
+    signal cerradura_activa    : std_logic;                     -- Salida de cerradura ya controlada
+    signal pestillo_activo     : std_logic;                     -- Salida de pestillo
+
+    signal seg_h0_num          : std_logic_vector(6 downto 0);  -- Segmentos numero HEX0
+    signal seg_h1_num          : std_logic_vector(6 downto 0);  -- Segmentos numero HEX1
+    signal seg_h2_num          : std_logic_vector(6 downto 0);  -- Segmentos numero HEX2
+    signal seg_h3_num          : std_logic_vector(6 downto 0);  -- Segmentos numero HEX3
+
+    signal seg_o               : std_logic_vector(6 downto 0);  -- Letra O
+    signal seg_p               : std_logic_vector(6 downto 0);  -- Letra P
+    signal seg_e               : std_logic_vector(6 downto 0);  -- Letra E
+    signal seg_r               : std_logic_vector(6 downto 0);  -- Letra r
+    signal seg_a               : std_logic_vector(6 downto 0);  -- Letra A
+    signal seg_l               : std_logic_vector(6 downto 0);  -- Letra L
+    signal seg_b               : std_logic_vector(6 downto 0);  -- Letra b
+    signal seg_i               : std_logic_vector(6 downto 0);  -- Letra I
+    signal seg_d               : std_logic_vector(6 downto 0);  -- Letra d
+    signal seg_blanco          : std_logic_vector(6 downto 0);  -- Blanco
+
+    signal decenas_tiempo      : std_logic_vector(3 downto 0);  -- Decenas de tiempo
+    signal unidades_tiempo     : std_logic_vector(3 downto 0);  -- Unidades de tiempo
+    signal seg_decenas         : std_logic_vector(6 downto 0);  -- 7 seg decenas
+    signal seg_unidades        : std_logic_vector(6 downto 0);  -- 7 seg unidades
+
+    constant CLAVE_CORRECTA    : std_logic_vector(15 downto 0) := x"1234"; -- Clave valida fija
+    constant TIEMPO_APERTURA   : integer := 5;                               -- Apertura en segundos
+    constant TIEMPO_BLOQUEO    : integer := 10;                              -- Bloqueo/alarma en segundos
+
+begin
+
+    -- =====================================================
+    -- Modulos de entrada
+    -- =====================================================
+
+    u_antirrebote : antirrebote_activo_bajo
+        port map(
+            clk    => CLOCK_50,
+            rst    => RESET,
+            btn_in => KEY0,
+            btn_db => boton_limpio
+        );
+
+    u_flanco : detector_flanco_bajada
+        port map(
+            clk    => CLOCK_50,
+            rst    => RESET,
+            sig_in => boton_limpio,
+            pulso  => pulso_carga
+        );
+
+    -- =====================================================
+    -- Registro de clave
+    -- =====================================================
+
+    u_registro_clave : registro_corrimiento_4_digitos
+        port map(
+            clk            => CLOCK_50,
+            rst            => RESET,
+            limpiar        => limpiar_clave_s,
+            cargar_digito  => pulso_carga,
+            digito_in      => SW,
+            hex0_out       => dig_hex0,
+            hex1_out       => dig_hex1,
+            hex2_out       => dig_hex2,
+            hex3_out       => dig_hex3,
+            clave_out      => clave_ingresada,
+            cuenta_digitos => cantidad_digitos,
+            completo       => clave_completa
+        );
+
+    -- =====================================================
+    -- Comparador de clave
+    -- =====================================================
+
+    u_comparador : comparador_clave_4_digitos
+        port map(
+            clave_ingresada => clave_ingresada,
+            clave_guardada  => CLAVE_CORRECTA,
+            coincide        => clave_correcta
+        );
+
+    -- =====================================================
+    -- Contador de intentos fallidos
+    -- =====================================================
+
+    u_contador_intentos : contador_intentos_fallidos
+        port map(
+            clk              => CLOCK_50,
+            rst              => RESET,
+            limpiar          => limpiar_intentos_s,
+            incrementar      => incrementar_int_s,
+            cuenta           => intentos,
+            maximo_alcanzado => maximo_intentos
+        );
+
+    -- =====================================================
+    -- Base de tiempo
+    -- =====================================================
+
+    u_tick_1s : generador_tick_1s
+        port map(
+            clk     => CLOCK_50,
+            rst     => RESET,
+            tick_1s => tick_1s
+        );
+
+    -- =====================================================
+    -- Temporizador de apertura
+    -- =====================================================
+
+    u_tiempo_apertura : temporizador_descendente
+        port map(
+            clk       => CLOCK_50,
+            rst       => RESET,
+            iniciar   => iniciar_apertura_s,
+            tick_1s   => tick_1s,
+            preset    => TIEMPO_APERTURA,
+            corriendo => apertura_corriendo,
+            terminado => apertura_fin,
+            valor_out => apertura_valor
+        );
+
+    -- =====================================================
+    -- Temporizador de bloqueo / alarma
+    -- =====================================================
+
+    u_tiempo_bloqueo : temporizador_descendente
+        port map(
+            clk       => CLOCK_50,
+            rst       => RESET,
+            iniciar   => iniciar_bloqueo_s,
+            tick_1s   => tick_1s,
+            preset    => TIEMPO_BLOQUEO,
+            corriendo => bloqueo_corriendo,
+            terminado => bloqueo_fin,
+            valor_out => bloqueo_valor
+        );
+
+    -- =====================================================
+    -- Monitor de puerta
+    -- =====================================================
+
+    u_monitor_puerta : monitor_puerta
+        port map(
+            sensor_puerta  => SENSOR_PUERTA,
+            puerta_abierta => puerta_abierta,
+            puerta_cerrada => puerta_cerrada
+        );
+
+    -- =====================================================
+    -- Maquina de estados principal
+    -- =====================================================
+
+    u_fsm : maquina_estados_principal
+        port map(
+            clk                 => CLOCK_50,
+            rst                 => RESET,
+            clave_completa      => clave_completa,
+            clave_correcta      => clave_correcta,
+            intentos_actuales   => intentos,
+            intrusion           => INTRUSION_IN,
+            tiempo_apertura_fin => apertura_fin,
+            tiempo_bloqueo_fin  => bloqueo_fin,
+            estado_out          => estado_sistema,
+            limpiar_clave       => limpiar_clave_s,
+            incrementar_intento => incrementar_int_s,
+            limpiar_intentos    => limpiar_intentos_s,
+            iniciar_apertura    => iniciar_apertura_s,
+            iniciar_bloqueo     => iniciar_bloqueo_s,
+            activar_alarma      => activar_alarma_s,
+            desactivar_alarma   => desactivar_alarma_s,
+            abrir_cerradura     => abrir_cerradura_s,
+            activar_pestillo    => activar_pestillo_s
+        );
+
+    -- =====================================================
+    -- Control de alarma
+    -- =====================================================
+
+    u_control_alarma : controlador_alarma
+        port map(
+            clk        => CLOCK_50,
+            rst        => RESET,
+            activar    => activar_alarma_s,
+            desactivar => desactivar_alarma_s,
+            alarma_out => alarma_activa
+        );
+
+    -- =====================================================
+    -- Control de cerradura
+    -- =====================================================
+
+    u_control_cerradura : controlador_cerradura
+        port map(
+            abrir            => abrir_cerradura_s,
+            cerrar           => not abrir_cerradura_s,
+            activar_pestillo => activar_pestillo_s,
+            cerradura_out    => cerradura_activa,
+            pestillo_out     => pestillo_activo
+        );
+
+    -- =====================================================
+    -- Decodificadores numericos para mostrar clave
+    -- =====================================================
+
+    u_hex0_num : fiveb
+        port map(
+            entrada => dig_hex0,
+            seg     => seg_h0_num
+        );
+
+    u_hex1_num : fiveb
+        port map(
+            entrada => dig_hex1,
+            seg     => seg_h1_num
+        );
+
+    u_hex2_num : fiveb
+        port map(
+            entrada => dig_hex2,
+            seg     => seg_h2_num
+        );
+
+    u_hex3_num : fiveb
+        port map(
+            entrada => dig_hex3,
+            seg     => seg_h3_num
+        );
+
+    -- =====================================================
+    -- Decodificadores alfanumericos para estados
+    -- =====================================================
+
+    u_letra_o : decodificador_7seg_alfanumerico
+        port map(
+            codigo => "0101",
+            seg    => seg_o
+        );
+
+    u_letra_p : decodificador_7seg_alfanumerico
+        port map(
+            codigo => "0110",
+            seg    => seg_p
+        );
+
+    u_letra_e : decodificador_7seg_alfanumerico
+        port map(
+            codigo => "0100",
+            seg    => seg_e
+        );
+
+    u_letra_r : decodificador_7seg_alfanumerico
+        port map(
+            codigo => "1000",
+            seg    => seg_r
+        );
+
+    u_letra_a : decodificador_7seg_alfanumerico
+        port map(
+            codigo => "0111",
+            seg    => seg_a
+        );
+
+    u_letra_l : decodificador_7seg_alfanumerico
+        port map(
+            codigo => "0011",
+            seg    => seg_l
+        );
+
+    u_letra_b : decodificador_7seg_alfanumerico
+        port map(
+            codigo => "1001",
+            seg    => seg_b
+        );
+
+    u_letra_i : decodificador_7seg_alfanumerico
+        port map(
+            codigo => "0001",
+            seg    => seg_i
+        );
+
+    u_letra_d : decodificador_7seg_alfanumerico
+        port map(
+            codigo => "0010",
+            seg    => seg_d
+        );
+
+    u_blanco : decodificador_7seg_alfanumerico
+        port map(
+            codigo => "0000",
+            seg    => seg_blanco
+        );
+
+    -- =====================================================
+    -- Conversor de tiempo a dos digitos
+    -- =====================================================
+
+    process(apertura_valor, bloqueo_valor, estado_sistema)
+        variable tiempo_actual : integer range 0 to 59;
+        variable decenas       : integer range 0 to 5;
+        variable unidades      : integer range 0 to 9;
+    begin
+        -- Escoge que tiempo mostrar segun el estado
+        if estado_sistema = "010" then               -- OPEN
+            tiempo_actual := apertura_valor;         -- Muestra tiempo de apertura
+        elsif estado_sistema = "100" then            -- ALARMA
+            tiempo_actual := bloqueo_valor;          -- Muestra tiempo de bloqueo/alarma
+        elsif estado_sistema = "101" then            -- BLOQUEO
+            tiempo_actual := bloqueo_valor;          -- Muestra tiempo de bloqueo
+        else
+            tiempo_actual := 0;                      -- En otros estados muestra 0
+        end if;
+
+        decenas  := tiempo_actual / 10;              -- Calcula decenas
+        unidades := tiempo_actual mod 10;            -- Calcula unidades
+
+        decenas_tiempo  <= std_logic_vector(to_unsigned(decenas, 4));   -- Convierte a 4 bits
+        unidades_tiempo <= std_logic_vector(to_unsigned(unidades, 4));  -- Convierte a 4 bits
+    end process;
+
+    u_decenas : fiveb
+        port map(
+            entrada => decenas_tiempo,
+            seg     => seg_decenas
+        );
+
+    u_unidades : fiveb
+        port map(
+            entrada => unidades_tiempo,
+            seg     => seg_unidades
+        );
+
+    -- =====================================================
+    -- Mux de visualizacion en displays
+    -- =====================================================
+    process(estado_sistema, seg_h0_num, seg_h1_num, seg_h2_num, seg_h3_num,
+            seg_o, seg_p, seg_e, seg_r, seg_a, seg_l, seg_b, seg_i, seg_d,
+            seg_blanco, seg_decenas, seg_unidades)
+    begin
+        if estado_sistema = "001" then
+            -- INGRESO:
+            -- muestra los 4 digitos cargados por el usuario
+            HEX0 <= seg_h0_num;
+            HEX1 <= seg_h1_num;
+            HEX2 <= seg_h2_num;
+            HEX3 <= seg_h3_num;
+
+        elsif estado_sistema = "010" then
+            -- OPEN:
+            -- HEX3 = O, HEX2 = P, HEX1 = decenas, HEX0 = unidades
+            HEX3 <= seg_o;
+            HEX2 <= seg_p;
+            HEX1 <= seg_decenas;
+            HEX0 <= seg_unidades;
+
+        elsif estado_sistema = "011" then
+            -- ERROR:
+            -- HEX3 = E, HEX2 = r, HEX1 = r, HEX0 blanco
+            HEX3 <= seg_e;
+            HEX2 <= seg_r;
+            HEX1 <= seg_r;
+            HEX0 <= seg_blanco;
+
+        elsif estado_sistema = "100" then
+            -- ALARMA:
+            -- HEX3 = A, HEX2 = L, HEX1 = decenas, HEX0 = unidades
+            HEX3 <= seg_a;
+            HEX2 <= seg_l;
+            HEX1 <= seg_decenas;
+            HEX0 <= seg_unidades;
+
+        elsif estado_sistema = "101" then
+            -- BLOQUEO:
+            -- HEX3 = b, HEX2 = L, HEX1 = decenas, HEX0 = unidades
+            HEX3 <= seg_b;
+            HEX2 <= seg_l;
+            HEX1 <= seg_decenas;
+            HEX0 <= seg_unidades;
+
+        else
+            -- IDLE:
+            -- HEX3 = I, HEX2 = d, HEX1 = L, HEX0 = E
+            HEX3 <= seg_i;
+            HEX2 <= seg_d;
+            HEX1 <= seg_l;
+            HEX0 <= seg_e;
+        end if;
+    end process;
+
+    -- =====================================================
+    -- Leds de estado
+    -- =====================================================
+
+    LED_OK        <= '1' when estado_sistema = "010" else '0'; -- Enciende en apertura correcta
+    LED_ALARMA    <= alarma_activa;                            -- Refleja alarma
+    LED_CERRADURA <= cerradura_activa;                         -- Refleja cerradura abierta
+    LED_BLOQUEO   <= '1' when estado_sistema = "101" else '0';-- Enciende en bloqueo
+    LED_PUERTA    <= puerta_abierta;                           -- Refleja si la puerta esta abierta
+
+end arquitectura_sistema_control_acceso_top;

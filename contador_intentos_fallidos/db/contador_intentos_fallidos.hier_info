@@ -1,0 +1,14 @@
+|contador_intentos_fallidos
+clk => contador[0].CLK
+clk => contador[1].CLK
+rst => contador[0].ACLR
+rst => contador[1].ACLR
+limpiar => contador.OUTPUTSELECT
+limpiar => contador.OUTPUTSELECT
+incrementar => contador.OUTPUTSELECT
+incrementar => contador.OUTPUTSELECT
+cuenta[0] <= contador[0].DB_MAX_OUTPUT_PORT_TYPE
+cuenta[1] <= contador[1].DB_MAX_OUTPUT_PORT_TYPE
+maximo_alcanzado <= Equal0.DB_MAX_OUTPUT_PORT_TYPE
+
+

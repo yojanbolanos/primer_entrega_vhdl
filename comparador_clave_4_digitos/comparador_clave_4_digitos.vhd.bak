@@ -1,0 +1,19 @@
+library ieee;                              
+use ieee.std_logic_1164.all;               
+
+entity comparador_clave_4_digitos is        -- Nombre de la entidad
+    port(
+        clave_ingresada : in  std_logic_vector(15 downto 0); -- Clave escrita por el usuario
+        clave_guardada  : in  std_logic_vector(15 downto 0); -- Clave correcta almacenada
+        coincide        : out std_logic                      -- Resultado de la comparacion
+    );
+end comparador_clave_4_digitos;
+
+architecture arquitectura_comparador_clave_4_digitos of comparador_clave_4_digitos is
+begin
+
+    coincide <= '1' when clave_ingresada = clave_guardada else '0';
+    -- Si ambas claves son iguales, coincide vale 1.
+    -- Si son distintas, coincide vale 0.
+
+end arquitectura_comparador_clave_4_digitos;

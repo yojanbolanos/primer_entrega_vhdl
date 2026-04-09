@@ -1,0 +1,36 @@
+|comparador_clave_4_digitos
+clave_ingresada[0] => Equal0.IN15
+clave_ingresada[1] => Equal0.IN14
+clave_ingresada[2] => Equal0.IN13
+clave_ingresada[3] => Equal0.IN12
+clave_ingresada[4] => Equal0.IN11
+clave_ingresada[5] => Equal0.IN10
+clave_ingresada[6] => Equal0.IN9
+clave_ingresada[7] => Equal0.IN8
+clave_ingresada[8] => Equal0.IN7
+clave_ingresada[9] => Equal0.IN6
+clave_ingresada[10] => Equal0.IN5
+clave_ingresada[11] => Equal0.IN4
+clave_ingresada[12] => Equal0.IN3
+clave_ingresada[13] => Equal0.IN2
+clave_ingresada[14] => Equal0.IN1
+clave_ingresada[15] => Equal0.IN0
+clave_guardada[0] => Equal0.IN31
+clave_guardada[1] => Equal0.IN30
+clave_guardada[2] => Equal0.IN29
+clave_guardada[3] => Equal0.IN28
+clave_guardada[4] => Equal0.IN27
+clave_guardada[5] => Equal0.IN26
+clave_guardada[6] => Equal0.IN25
+clave_guardada[7] => Equal0.IN24
+clave_guardada[8] => Equal0.IN23
+clave_guardada[9] => Equal0.IN22
+clave_guardada[10] => Equal0.IN21
+clave_guardada[11] => Equal0.IN20
+clave_guardada[12] => Equal0.IN19
+clave_guardada[13] => Equal0.IN18
+clave_guardada[14] => Equal0.IN17
+clave_guardada[15] => Equal0.IN16
+coincide <= Equal0.DB_MAX_OUTPUT_PORT_TYPE
+
+

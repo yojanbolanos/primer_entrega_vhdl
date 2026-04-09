@@ -1,0 +1,36 @@
+library ieee;                              -- Libreria base
+use ieee.std_logic_1164.all;               -- Tipos logicos
+
+entity detector_flanco_bajada is           -- Nombre de la entidad
+    port(
+        clk    : in  std_logic;            -- Reloj principal
+        rst    : in  std_logic;            -- Reset del sistema
+        sig_in : in  std_logic;            -- Señal de entrada ya filtrada
+        pulso  : out std_logic             -- Pulso de 1 ciclo al detectar 1->0
+    );
+end detector_flanco_bajada;
+
+architecture arquitectura_detector_flanco_bajada of detector_flanco_bajada is
+
+    signal sig_anterior : std_logic := '1'; -- Guarda el valor anterior de la señal
+
+begin
+
+    process(clk, rst)                       -- Proceso secuencial
+    begin
+        if rst = '1' then                   -- Si reset activo
+            sig_anterior <= '1';            -- Inicializa en reposo
+            pulso        <= '0';            -- Sin pulso
+
+        elsif rising_edge(clk) then         -- En cada flanco de subida
+            pulso <= '0';                   -- Por defecto no se genera pulso
+
+            if (sig_anterior = '1' and sig_in = '0') then -- Detecta bajada 1->0
+                pulso <= '1';               -- Genera pulso durante 1 ciclo
+            end if;
+
+            sig_anterior <= sig_in;         -- Actualiza el valor anterior
+        end if;
+    end process;
+
+end arquitectura_detector_flanco_bajada;

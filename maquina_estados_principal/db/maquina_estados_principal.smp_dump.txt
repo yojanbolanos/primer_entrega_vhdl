@@ -1,0 +1,9 @@
+
+State Machine - |maquina_estados_principal|estado_actual
+Name estado_actual.BLOQUEO estado_actual.ALARMA estado_actual.ERROR_CLAVE estado_actual.ABIERTO estado_actual.INGRESO estado_actual.IDLE 
+estado_actual.IDLE 0 0 0 0 0 0 
+estado_actual.INGRESO 0 0 0 0 1 1 
+estado_actual.ABIERTO 0 0 0 1 0 1 
+estado_actual.ERROR_CLAVE 0 0 1 0 0 1 
+estado_actual.ALARMA 0 1 0 0 0 1 
+estado_actual.BLOQUEO 1 0 0 0 0 1 
